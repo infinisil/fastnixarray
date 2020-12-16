@@ -1,49 +1,52 @@
 rec {
 
-  testArray = {
-    capacity = 2;
-    contents = [ 1 2 ];
-    empty = "empty";
+  lib = import <nixpkgs/lib>;
+
+  foo = let
+    list = lib.range 0 20000;
+  in builtins.deepSeq list (builtins.seq (measure "array" (toArray list)) null);
+
+  test = set 0 0 emptyArray;
+
+  count = 4;
+
+  emptyArray = {
+    capacity = count;
+    contents = [];
+    empty = null;
   };
 
-  foo = set 2 "hi" (set 4 10 (set 3 1 testArray));
+  measure = name: x: builtins.trace "Measure start ${name}" (builtins.seq x (builtins.trace "Measure stop ${name}" x));
+
+  toArray = list: builtins.foldl' (arr: i: (set i (builtins.elemAt list i) arr)) emptyArray (builtins.genList (i: i) (builtins.length list));
+
+  toList = arr: seqListElems (builtins.genList (n: get n arr) arr.capacity);
+
+  seqListElems = list: builtins.seq (builtins.foldl' builtins.seq null list) list;
 
   set = i: v: arr:
     if i >= arr.capacity
-    then set i v { empty = arr.empty; capacity = arr.capacity * 2; contents = [ arr.contents ]; }
+    then set i v { empty = arr.empty; capacity = arr.capacity * count; contents = [ arr.contents ]; }
     else
       let
         go = j: l: c:
-          let
-            left = if builtins.length c <= 0 then if l == 1 then arr.empty else [] else builtins.elemAt c 0;
-            right = if builtins.length c <= 1 then if l == 1 then arr.empty else [] else builtins.elemAt c 1;
-          in
-          if l == 0 then builtins.trace "Setting v" v
-          else if j >= l then builtins.trace "Going right" [
-            left
-            (go (j - l) (l / 2) right)
-          ] else builtins.trace "Going left" [
-            (go j (l / 2) left)
-            right
-          ];
-      in { empty = arr.empty; capacity = arr.capacity; contents = go i (arr.capacity / 2) arr.contents; };
+          if l == 0 then v
+          else seqListElems (builtins.genList (n:
+            let
+              value = if builtins.length c <= n then if l < count then arr.empty else [] else builtins.elemAt c n;
+              match = j >= n * l && j < (n + 1) * l;
+            in if match then go (j - n * l) (l / count) value else value
+          ) count);
+        newContents = go i (arr.capacity / count) arr.contents;
+      in builtins.seq newContents { empty = arr.empty; capacity = arr.capacity; contents = newContents; };
 
   get = i: arr:
     let
-      # j < size(c)
       go = j: l: c:
         if l == 0 then c
-        else if j >= l then
-          if builtins.length c <= 1 then arr.empty
-          else go (j - l) (l / 2) (builtins.elemAt c 1)
-        else
-          if builtins.length c <= 0 then arr.empty
-          else go j (l / 2) (builtins.elemAt c 0);
-    in go i (arr.capacity / 2) arr.contents;
-
-    #go 0 2 [ 5 7 ]
-
-  test = builtins.genList (n: get n testArray) testArray.capacity;
-   
+        else let n = j / l; in
+          if builtins.length c <= n then arr.empty
+          else go (j - n * l) (l / count) (builtins.elemAt c n);
+    in go i (arr.capacity / count) arr.contents;
 
 }
